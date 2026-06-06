@@ -1,0 +1,6 @@
+{
+  "name": "Dark Todo List",
+  "description": "A minimalist, beautifully animated dark-themed todo app with offline sync, reminders, custom project folders, calendars integration, voice entry, stats analytics, and data backup.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
