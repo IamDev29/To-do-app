@@ -9,7 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [Category::class, Task::class], version = 1, exportSchema = false)
+@Database(entities = [Category::class, Task::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
 
@@ -24,6 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "dark_todo_database"
                 )
+                .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback(scope))
                 .build()
                 INSTANCE = instance
@@ -55,34 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
                     taskDao.insertCategory(folder)
                 }
 
-                // Add simple introductory onboarding tasks
-                // This makes the first-time use experience extremely complete
-                val onboardTasks = listOf(
-                    Task(
-                        title = "Welcome to Dark Todo! ⚡",
-                        description = "This is a minimalist dark space to record your tasks. Swipe or tap the checkbox to complete me.",
-                        priority = 2, // High priority
-                        isCompleted = false,
-                        categoryId = 2 // Personal Focus
-                    ),
-                    Task(
-                        title = "Create a custom folder",
-                        description = "Tap the '+' icon on the sidebar or project layout to organize tasks into folders.",
-                        priority = 1,
-                        isCompleted = false,
-                        categoryId = 4 // Creative
-                    ),
-                    Task(
-                        title = "Explore detailed analytics 📊",
-                        description = "Check out your custom productivity vectors under the Analytics tab! Complete some tasks to populate details.",
-                        priority = 0,
-                        isCompleted = true,
-                        categoryId = 1 // Work & Tech
-                    )
-                )
-                for (task in onboardTasks) {
-                    taskDao.insertTask(task)
-                }
+                // Demo tasks have been entirely removed as the app is ready for deployment to start from scratch.
             }
         }
     }

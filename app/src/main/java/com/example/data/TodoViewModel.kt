@@ -25,6 +25,11 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     val allTasks: StateFlow<List<Task>>
     val allCategories: StateFlow<List<Category>>
 
+    // Account & Authentication States (Stored inside ViewModel)
+    val currentUserEmail = MutableStateFlow<String?>(null)
+    val currentDisplayName = MutableStateFlow<String?>(null)
+    val isTutorialCompleted = MutableStateFlow(false)
+
     // Filters & Selections
     val selectedCategoryFilter = MutableStateFlow<Int?>(null) // null = Show All
     val searchQuery = MutableStateFlow("")
@@ -41,7 +46,25 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
         val database = AppDatabase.getDatabase(application, viewModelScope)
         repository = TaskRepository(database.taskDao())
 
-        allTasks = repository.allTasks.stateIn(
+        // Load persisted Google Authenticated user profile and tutorial state from SharedPreferences
+        val prefs = application.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
+        currentUserEmail.value = prefs.getString("auth_email", null)
+        currentDisplayName.value = prefs.getString("auth_display_name", null)
+        isTutorialCompleted.value = prefs.getBoolean("tutorial_completed", false)
+
+        // Reactive: Combine raw tasks from Room with the currentUserEmail to keep data segregated
+        allTasks = combine(
+            repository.allTasks,
+            currentUserEmail
+        ) { tasks, email ->
+            tasks.filter { task ->
+                if (email == null) {
+                    task.userEmail == null || task.userEmail == "" || task.userEmail == "local"
+                } else {
+                    task.userEmail == email
+                }
+            }
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -59,6 +82,52 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
                 computeStats(tasks)
             }
         }
+    }
+
+    // Google Sign-In Authentication handler
+    fun googleSignIn(email: String, name: String, context: Context) {
+        viewModelScope.launch {
+            currentUserEmail.value = email
+            currentDisplayName.value = name
+
+            val prefs = context.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putString("auth_email", email)
+                putString("auth_display_name", name)
+                apply()
+            }
+
+            // Migration: Preserve previous local guest tasks by transferring them to the new Google Account
+            val tasks = repository.allTasks.firstOrNull() ?: emptyList()
+            for (task in tasks) {
+                if (task.userEmail == null || task.userEmail == "" || task.userEmail == "local") {
+                    val updated = task.copy(userEmail = email)
+                    repository.updateTask(updated)
+                }
+            }
+        }
+    }
+
+    // Google Sign-Out Authentication handler
+    fun googleSignOut(context: Context) {
+        viewModelScope.launch {
+            currentUserEmail.value = null
+            currentDisplayName.value = null
+
+            val prefs = context.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                remove("auth_email")
+                remove("auth_display_name")
+                apply()
+            }
+        }
+    }
+
+    // Complete introductory tutorial and persist to database
+    fun completeTutorial(context: Context) {
+        isTutorialCompleted.value = true
+        val prefs = context.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("tutorial_completed", true).apply()
     }
 
     private fun computeStats(tasks: List<Task>) {
@@ -122,7 +191,8 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
                 categoryId = categoryId,
                 isRecurring = isRecurring,
                 recurrencePattern = recurrencePattern,
-                reminderTime = reminderTime
+                reminderTime = reminderTime,
+                userEmail = currentUserEmail.value
             )
             val taskId = repository.insertTask(task)
             
@@ -147,7 +217,8 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
                 val updatedTask = task.copy(
                     isCompleted = false,
                     dueDate = nextDueDate,
-                    reminderTime = task.reminderTime?.let { calculateNextRecurrenceDate(it, task.recurrencePattern) }
+                    reminderTime = task.reminderTime?.let { calculateNextRecurrenceDate(it, task.recurrencePattern) },
+                    userEmail = currentUserEmail.value
                 )
                 repository.updateTask(updatedTask)
 
@@ -156,7 +227,8 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
                     id = 0, // autoGenerate new ID
                     isCompleted = true,
                     isRecurring = false,
-                    recurrencePattern = null
+                    recurrencePattern = null,
+                    userEmail = currentUserEmail.value
                 )
                 repository.insertTask(historicalCompletedTask)
             } else {

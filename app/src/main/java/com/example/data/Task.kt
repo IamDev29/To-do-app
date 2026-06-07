@@ -26,5 +26,6 @@ data class Task(
     val isRecurring: Boolean = false,
     val recurrencePattern: String? = null, // "DAILY", "WEEKLY", "MONTHLY", null
     val reminderTime: Long? = null, // epoch millis
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val userEmail: String? = null
 )

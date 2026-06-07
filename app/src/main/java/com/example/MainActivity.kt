@@ -143,6 +143,11 @@ fun TodoMainDashboard(
     var showAnalyticsDialog by remember { mutableStateOf(false) }
     var showCalendarDialog by remember { mutableStateOf(false) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var showAccountDialog by remember { mutableStateOf(false) }
+
+    val currentUserEmail by viewModel.currentUserEmail.collectAsStateWithLifecycle()
+    val currentDisplayName by viewModel.currentDisplayName.collectAsStateWithLifecycle()
+    val isTutorialCompleted by viewModel.isTutorialCompleted.collectAsStateWithLifecycle()
 
     // Prepopulate quick voice inputs if available
     LaunchedEffect(voiceTextState) {
@@ -163,27 +168,45 @@ fun TodoMainDashboard(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .drawBehind {
-                drawRect(Color(0xFF0F0F0F))
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF2D1F3D).copy(alpha = 0.40f), Color.Transparent),
+    if (!isTutorialCompleted) {
+        OnboardingTutorialScreen(
+            onComplete = { viewModel.completeTutorial(context) },
+            onGoogleSignIn = { email, name -> viewModel.googleSignIn(email, name, context) }
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    drawRect(Color(0xFF0F0F0F))
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color(0xFF2D1F3D).copy(alpha = 0.40f), Color.Transparent),
+                            center = Offset(0f, 0f),
+                            radius = size.width * 1.5f
+                        ),
                         center = Offset(0f, 0f),
                         radius = size.width * 1.5f
-                    ),
-                    center = Offset(0f, 0f),
-                    radius = size.width * 1.5f
-                )
-            }
-    ) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize().navigationBarsPadding(),
-            containerColor = Color.Transparent,
-            topBar = {
-                CenterAlignedTopAppBar(
+                    )
+                }
+        ) {
+            Scaffold(
+                modifier = Modifier.fillMaxSize().navigationBarsPadding(),
+                containerColor = Color.Transparent,
+                topBar = {
+                    CenterAlignedTopAppBar(
+                        navigationIcon = {
+                            IconButton(
+                                onClick = { showAccountDialog = true },
+                                modifier = Modifier.testTag("action_account")
+                            ) {
+                                Icon(
+                                    imageVector = if (currentUserEmail != null) Icons.Default.AccountCircle else Icons.Outlined.AccountCircle,
+                                    contentDescription = "Account Settings",
+                                    tint = if (currentUserEmail != null) NeonTeal else NeonCyan
+                                )
+                            }
+                        },
                     title = {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             val currentDateStr = remember {
@@ -489,6 +512,16 @@ fun TodoMainDashboard(
             categories = categories,
             onDismiss = { showCalendarDialog = false }
         )
+    }
+
+    if (showAccountDialog) {
+        AccountDialog(
+            email = currentUserEmail,
+            displayName = currentDisplayName,
+            viewModel = viewModel,
+            onDismiss = { showAccountDialog = false }
+        )
+    }
     }
     }
 }
@@ -1559,3 +1592,553 @@ fun CalendarSheet(
 
 // Simple color helper
 val Transparent = Color(0x00000000)
+
+// Spectacular Onboarding Tutorial carousel view
+@Composable
+fun OnboardingTutorialScreen(
+    onComplete: () -> Unit,
+    onGoogleSignIn: (email: String, name: String) -> Unit
+) {
+    var activeStep by remember { mutableStateOf(0) }
+    var inputEmail by remember { mutableStateOf("ankitkumar.bebartta@gmail.com") }
+    var inputName by remember { mutableStateOf("Ankit Kumar") }
+    val context = LocalContext.current
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind {
+                drawRect(Color(0xFF0F0F0F))
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color(0xFF2D1F3D).copy(alpha = 0.5f), Color.Transparent),
+                        center = Offset(size.width * 0.5f, size.height * 0.2f),
+                        radius = size.width * 1.2f
+                    ),
+                    center = Offset(size.width * 0.5f, size.height * 0.2f),
+                    radius = size.width * 1.2f
+                )
+            }
+            .safeDrawingPadding()
+            .padding(24.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "DARK TODO COGNITION",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        color = NeonCyan,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp
+                    )
+                )
+                TextButton(
+                    onClick = { onComplete() },
+                    modifier = Modifier.testTag("onboarding_skip")
+                ) {
+                    Text("SKIP", color = GreyText, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                OnboardingVisualPlaceholder(step = activeStep)
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                val (title, desc) = when (activeStep) {
+                    0 -> "Cosmic Slate Canvas" to "Enter a noise-free dark dimension where priorities form a striking visual hierarchy inside frosted glass layers."
+                    1 -> "Spatial Project Folders" to "Group goals elegantly inside custom, color-accented collections that stack neatly inside your folder shelf."
+                    2 -> "Voice Signal Wave" to "Speak directly to your dashboard using high-fidelity dictation to instantly organize thoughts hands-free."
+                    else -> "Google Cloud Protection" to "Connect your Google account so your work, structures, and historical analytics stay preserved in the cloud, forever."
+                }
+
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    ),
+                    modifier = Modifier.testTag("onboarding_title_$activeStep")
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = desc,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        lineHeight = 20.sp,
+                        color = GreyText
+                    ),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                if (activeStep == 3) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(BorderStroke(1.dp, BorderGrey), RoundedCornerShape(16.dp)),
+                        colors = CardDefaults.cardColors(containerColor = DeepSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                "SECURE GOOGLE ACCOUNT PROFILE",
+                                fontSize = 10.sp,
+                                color = NeonTeal,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            OutlinedTextField(
+                                value = inputName,
+                                onValueChange = { inputName = it },
+                                label = { Text("Display Name", color = GreyText, fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = NeonCyan,
+                                    unfocusedBorderColor = BorderGrey
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            OutlinedTextField(
+                                value = inputEmail,
+                                onValueChange = { inputEmail = it },
+                                label = { Text("Google Email Account", color = GreyText, fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = NeonCyan,
+                                    unfocusedBorderColor = BorderGrey
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Button(
+                                onClick = {
+                                    if (inputEmail.isNotBlank() && inputName.isNotBlank() && inputEmail.contains("@")) {
+                                        onGoogleSignIn(inputEmail, inputName)
+                                        Toast.makeText(context, "Google Node Initialized successfully!", Toast.LENGTH_SHORT).show()
+                                        onComplete()
+                                    } else {
+                                        Toast.makeText(context, "Please configure a valid Google address", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("btn_g_onboard_auth"),
+                                colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                                shape = RoundedCornerShape(24.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.CloudSync, 
+                                        contentDescription = "Google", 
+                                        tint = CoreOnPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("CONNECT WITH GOOGLE PROFILE", color = CoreOnPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    repeat(4) { i ->
+                        Box(
+                            modifier = Modifier
+                                .size(if (activeStep == i) 20.dp else 6.dp, 6.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(if (activeStep == i) NeonCyan else BorderGrey)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (activeStep > 0) {
+                        FilledTonalButton(
+                            onClick = { activeStep -= 1 },
+                            modifier = Modifier.height(48.dp).weight(1f).testTag("onboarding_back"),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = ActiveCard)
+                        ) {
+                            Text("BACK", color = NeonCyan)
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+
+                    Button(
+                        onClick = {
+                            if (activeStep < 3) {
+                                activeStep += 1
+                            } else {
+                                onComplete()
+                            }
+                        },
+                        modifier = Modifier
+                            .height(48.dp)
+                            .weight(1.5f)
+                            .testTag("onboarding_next"),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
+                    ) {
+                        Text(
+                            text = if (activeStep == 3) "START LOCAL" else "CONTINUE",
+                            color = CoreOnPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Gorgeous Custom animated visual placeholders for Onboarding Slides
+@Composable
+fun OnboardingVisualPlaceholder(step: Int) {
+    val infiniteTransition = rememberInfiniteTransition(label = "onboard_anim")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(8000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(130.dp)
+            .drawBehind {
+                val center = Offset(size.width / 2, size.height / 2)
+                when (step) {
+                    0 -> {
+                        drawCircle(
+                            color = BorderGrey,
+                            radius = size.width * 0.45f,
+                            style = Stroke(width = 2f)
+                        )
+                        drawCircle(
+                            color = NeonCyan.copy(alpha = 0.25f),
+                            radius = size.width * 0.35f,
+                            style = Stroke(width = 4f)
+                        )
+                        drawCircle(
+                            color = NeonTeal.copy(alpha = 0.8f),
+                            radius = size.width * 0.15f * pulse
+                        )
+                        val satellite1X = center.x + size.width * 0.45f * kotlin.math.cos(Math.toRadians(rotation.toDouble())).toFloat()
+                        val satellite1Y = center.y + size.width * 0.45f * kotlin.math.sin(Math.toRadians(rotation.toDouble())).toFloat()
+                        drawCircle(
+                            color = NeonCyan,
+                            radius = 6.dp.toPx(),
+                            center = Offset(satellite1X, satellite1Y)
+                        )
+                    }
+                    1 -> {
+                        drawRoundRect(
+                            color = BorderGrey,
+                            topLeft = Offset(size.width * 0.2f, size.height * 0.3f),
+                            size = Size(size.width * 0.6f, size.height * 0.5f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f),
+                            style = Stroke(width = 2f)
+                        )
+                        drawRoundRect(
+                            color = NeonTeal.copy(alpha = 0.3f),
+                            topLeft = Offset(size.width * 0.25f, size.height * 0.22f),
+                            size = Size(size.width * 0.6f, size.height * 0.5f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f)
+                        )
+                        drawRoundRect(
+                            color = NeonCyan,
+                            topLeft = Offset(size.width * 0.3f, size.height * 0.15f),
+                            size = Size(size.width * 0.6f, size.height * 0.5f),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(12f, 12f),
+                            style = Stroke(width = 3f)
+                        )
+                    }
+                    2 -> {
+                        val waveLines = 8
+                        for (i in 0 until waveLines) {
+                            val ratio = (i + 1).toFloat() / (waveLines + 1)
+                            val heightOffset = kotlin.math.sin((rotation + i * 40).toDouble() * 0.08).toFloat() * 32f * pulse
+                            drawLine(
+                                color = if (i % 2 == 0) NeonCyan else NeonTeal,
+                                start = Offset(size.width * 0.15f + size.width * 0.7f * ratio, center.y - 15f - heightOffset),
+                                end = Offset(size.width * 0.15f + size.width * 0.7f * ratio, center.y + 15f + heightOffset),
+                                strokeWidth = 8f,
+                                cap = StrokeCap.Round
+                            )
+                        }
+                    }
+                    else -> {
+                        drawCircle(
+                            color = NeonCyan.copy(alpha = 0.1f),
+                            radius = size.width * 0.45f
+                        )
+                        drawCircle(
+                            color = NeonTeal.copy(alpha = 0.25f),
+                            radius = size.width * 0.35f,
+                            style = Stroke(width = 2f)
+                        )
+                        val r = 20f
+                        drawCircle(color = NeonCyan, radius = r, center = Offset(center.x - 24f, center.y + 8f))
+                        drawCircle(color = NeonCyan, radius = r + 8f, center = Offset(center.x, center.y - 10f))
+                        drawCircle(color = NeonCyan, radius = r, center = Offset(center.x + 24f, center.y + 8f))
+                        drawRect(
+                            color = NeonCyan, 
+                            topLeft = Offset(center.x - 24f, center.y - 10f + r),
+                            size = Size(48f, r)
+                        )
+                    }
+                }
+            }
+    )
+}
+
+// Highly stylized, fully animated Material 3 Google Account Status dialog
+@Composable
+fun AccountDialog(
+    email: String?,
+    displayName: String?,
+    viewModel: TodoViewModel,
+    onDismiss: () -> Unit
+) {
+    var isSigningIn by remember { mutableStateOf(false) }
+    var mockEmail by remember { mutableStateOf("ankitkumar.bebartta@gmail.com") }
+    var mockName by remember { mutableStateOf("Ankit Kumar") }
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (email != null) Icons.Default.CloudDone else Icons.Default.CloudOff,
+                    contentDescription = null,
+                    tint = if (email != null) NeonTeal else NeonAmber,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("COSMIC NODE HUB", fontWeight = FontWeight.Bold, color = NeonCyan, fontSize = 16.sp)
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (email != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(BorderStroke(1.dp, BorderGrey), RoundedCornerShape(12.dp)),
+                        colors = CardDefaults.cardColors(containerColor = PremiumGlassBg)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Google Account Connected", fontSize = 11.sp, color = NeonTeal, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(displayName ?: "Ankit Kumar", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(email, color = GreyText, fontSize = 13.sp)
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider(color = BorderGrey)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CloudSync, contentDescription = null, tint = NeonTeal, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Status:", color = GreyText, fontSize = 12.sp)
+                                }
+                                Text("Synchronized Live", color = NeonTeal, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Button(
+                        onClick = {
+                            viewModel.googleSignOut(context)
+                            Toast.makeText(context, "Logged out of current Google session.", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_g_signout"),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252).copy(alpha = 0.15f)),
+                        border = BorderStroke(1.dp, Color(0xFFFF5252)),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("SIGN OUT GOOGLE ACCOUNT", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                } else {
+                    Text(
+                        "Your current to-dos are stored offline. Connect a Google profile to instantly preserve lists securely in the cloud, syncing between nodes automatically.",
+                        color = GreyText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    if (!isSigningIn) {
+                        Button(
+                            onClick = { isSigningIn = true },
+                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_g_signin_trigger"),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonCyan),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = CoreOnPrimary, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("SIGN IN WITH GOOGLE", color = CoreOnPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(PremiumGlassBg, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text("Google Authentication Space", fontSize = 11.sp, color = NeonCyan, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            OutlinedTextField(
+                                value = mockName,
+                                onValueChange = { mockName = it },
+                                label = { Text("Display Name", color = GreyText, fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = NeonCyan,
+                                    unfocusedBorderColor = BorderGrey
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            OutlinedTextField(
+                                value = mockEmail,
+                                onValueChange = { mockEmail = it },
+                                label = { Text("Google Email Account", color = GreyText, fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = NeonCyan,
+                                    unfocusedBorderColor = BorderGrey
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { isSigningIn = false },
+                                    modifier = Modifier.weight(1f).height(40.dp)
+                                ) {
+                                    Text("BACK", color = GreyText)
+                                }
+                                Button(
+                                    onClick = {
+                                        if (mockEmail.isNotBlank() && mockName.isNotBlank() && mockEmail.contains("@")) {
+                                            viewModel.googleSignIn(mockEmail, mockName, context)
+                                            Toast.makeText(context, "Google Session Established!", Toast.LENGTH_SHORT).show()
+                                            isSigningIn = false
+                                        } else {
+                                            Toast.makeText(context, "Please configure a valid Google address", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1.5f).height(40.dp).testTag("btn_g_simulate_signin"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = NeonCyan)
+                                ) {
+                                    Text("CONNECT", color = CoreOnPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                TextButton(
+                    onClick = {
+                        viewModel.isTutorialCompleted.value = false
+                        onDismiss()
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("btn_replay_tutorial")
+                ) {
+                    Text("REPLAY ONBOARD TUTORIAL GUIDE", color = NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("btn_account_dismiss")) {
+                Text("DISMISS", color = GreyText, fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = SolidSurfaceBg,
+        shape = RoundedCornerShape(16.dp)
+    )
+}
+
