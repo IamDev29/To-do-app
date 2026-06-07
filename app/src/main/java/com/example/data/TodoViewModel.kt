@@ -39,6 +39,9 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     private val _stats = MutableStateFlow(TodoStats())
     val stats: StateFlow<TodoStats> = _stats.asStateFlow()
 
+    private val _todayStats = MutableStateFlow(TodoStats())
+    val todayStats: StateFlow<TodoStats> = _todayStats.asStateFlow()
+
     // Screen State / Sheet State for edit/create
     val currentVoiceText = MutableStateFlow<String?>(null)
 
@@ -85,12 +88,13 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Google Sign-In Authentication handler
-    fun googleSignIn(email: String, name: String, context: Context) {
+    fun googleSignIn(email: String, name: String, context: Context? = null) {
         viewModelScope.launch {
             currentUserEmail.value = email
             currentDisplayName.value = name
 
-            val prefs = context.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
+            val activeContext = context ?: getApplication()
+            val prefs = activeContext.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
             prefs.edit().apply {
                 putString("auth_email", email)
                 putString("auth_display_name", name)
@@ -109,12 +113,13 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Google Sign-Out Authentication handler
-    fun googleSignOut(context: Context) {
+    fun googleSignOut(context: Context? = null) {
         viewModelScope.launch {
             currentUserEmail.value = null
             currentDisplayName.value = null
 
-            val prefs = context.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
+            val activeContext = context ?: getApplication()
+            val prefs = activeContext.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
             prefs.edit().apply {
                 remove("auth_email")
                 remove("auth_display_name")
@@ -124,16 +129,57 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Complete introductory tutorial and persist to database
-    fun completeTutorial(context: Context) {
+    fun completeTutorial(context: Context? = null) {
         isTutorialCompleted.value = true
-        val prefs = context.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
+        val activeContext = context ?: getApplication()
+        val prefs = activeContext.getSharedPreferences("dark_todo_auth_prefs", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("tutorial_completed", true).apply()
     }
 
     private fun computeStats(tasks: List<Task>) {
+        val tomorrowStart = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        // Exclude pending tasks scheduled for future days (e.g. tomorrow's next-cycle recurring task)
+        val nonFutureTasks = tasks.filter { t ->
+            val isFuturePending = !t.isCompleted && t.dueDate != null && t.dueDate >= tomorrowStart
+            !isFuturePending
+        }
+
+        // 1. Overall stats (for Productivity Analytics) - Excluding future pending tasks!
+        _stats.value = calculateStatsForList(nonFutureTasks)
+
+        // 2. Today's stats (for PROJECT STATUS) - Only today's tasks!
+        val todayTasks = nonFutureTasks.filter { t ->
+            if (!t.isCompleted) {
+                // Pending tasks due today, in the past (overdue), or null due date (active today)
+                t.dueDate == null || t.dueDate < tomorrowStart
+            } else {
+                // Completed tasks completed/due today
+                val isCompletedToday = t.dueDate != null && t.dueDate >= todayStart && t.dueDate < tomorrowStart
+                val isCreatedToday = t.createdAt >= todayStart && t.createdAt < tomorrowStart
+                val isDueDateNullButCompletedToday = t.dueDate == null && isCreatedToday
+                isCompletedToday || isDueDateNullButCompletedToday
+            }
+        }
+        _todayStats.value = calculateStatsForList(todayTasks)
+    }
+
+    private fun calculateStatsForList(tasks: List<Task>): TodoStats {
         if (tasks.isEmpty()) {
-            _stats.value = TodoStats()
-            return
+            return TodoStats()
         }
 
         val total = tasks.size
@@ -145,7 +191,6 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
         val medPriority = tasks.count { it.priority == 1 }
         val highPriority = tasks.count { it.priority == 2 }
 
-        // Category breakdown
         val categoryCounts = mutableMapOf<Int, Int>()
         val categoryCompleted = mutableMapOf<Int, Int>()
 
@@ -157,7 +202,7 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        _stats.value = TodoStats(
+        return TodoStats(
             totalTasks = total,
             completedTasks = completed,
             pendingTasks = pending,
@@ -262,12 +307,15 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
     // Utility: Date recurrence math
     private fun calculateNextRecurrenceDate(currentDate: Long, pattern: String): Long {
         val cal = Calendar.getInstance().apply { timeInMillis = currentDate }
-        when (pattern.uppercase()) {
-            "DAILY" -> cal.add(Calendar.DAY_OF_YEAR, 1)
-            "WEEKLY" -> cal.add(Calendar.WEEK_OF_YEAR, 1)
-            "MONTHLY" -> cal.add(Calendar.MONTH, 1)
-            else -> cal.add(Calendar.DAY_OF_YEAR, 1)
-        }
+        val now = System.currentTimeMillis()
+        do {
+            when (pattern.uppercase()) {
+                "DAILY" -> cal.add(Calendar.DAY_OF_YEAR, 1)
+                "WEEKLY" -> cal.add(Calendar.WEEK_OF_YEAR, 1)
+                "MONTHLY" -> cal.add(Calendar.MONTH, 1)
+                else -> cal.add(Calendar.DAY_OF_YEAR, 1)
+            }
+        } while (cal.timeInMillis <= now)
         return cal.timeInMillis
     }
 

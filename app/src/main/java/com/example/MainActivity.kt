@@ -16,6 +16,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -131,6 +133,7 @@ fun TodoMainDashboard(
     val tasks by viewModel.allTasks.collectAsStateWithLifecycle()
     val categories by viewModel.allCategories.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
+    val todayStats by viewModel.todayStats.collectAsStateWithLifecycle()
 
     val selectedCategoryFilter by viewModel.selectedCategoryFilter.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
@@ -158,13 +161,25 @@ fun TodoMainDashboard(
 
     // Filtered lists
     val filteredTasks = remember(tasks, selectedCategoryFilter, searchQuery, priorityFilter) {
+        val tomorrowStart = Calendar.getInstance().apply {
+            add(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
         tasks.filter { t ->
             val matchesCategory = selectedCategoryFilter == null || t.categoryId == selectedCategoryFilter
             val matchesPriority = priorityFilter == null || t.priority == priorityFilter
             val matchesSearch = searchQuery.isBlank() || 
                     t.title.contains(searchQuery, ignoreCase = true) ||
                     t.description.contains(searchQuery, ignoreCase = true)
-            matchesCategory && matchesPriority && matchesSearch
+            
+            // Exclude pending tasks scheduled for future days (e.g. tomorrow's next-cycle recurring task)
+            val isFuturePending = !t.isCompleted && t.dueDate != null && t.dueDate >= tomorrowStart
+
+            matchesCategory && matchesPriority && matchesSearch && !isFuturePending
         }
     }
 
@@ -294,8 +309,8 @@ fun TodoMainDashboard(
                     .padding(innerPadding)
                     .padding(horizontal = 16.dp)
             ) {
-            // Stats summary card (inline minimal visual)
-            HorizontalStatsSummary(stats = stats)
+            // Stats summary card (inline minimal visual) - shows daily progress
+            HorizontalStatsSummary(stats = todayStats)
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -1620,6 +1635,7 @@ fun OnboardingTutorialScreen(
                 )
             }
             .safeDrawingPadding()
+            .imePadding()
             .padding(24.dp)
     ) {
         Column(
@@ -1654,6 +1670,7 @@ fun OnboardingTutorialScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    .verticalScroll(rememberScrollState())
                     .padding(vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
