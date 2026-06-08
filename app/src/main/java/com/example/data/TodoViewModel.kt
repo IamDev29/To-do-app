@@ -164,8 +164,10 @@ class TodoViewModel(application: Application) : AndroidViewModel(application) {
         // 2. Today's stats (for PROJECT STATUS) - Only today's tasks!
         val todayTasks = nonFutureTasks.filter { t ->
             if (!t.isCompleted) {
-                // Pending tasks due today, in the past (overdue), or null due date (active today)
-                t.dueDate == null || t.dueDate < tomorrowStart
+                // Pending tasks due today, or null due date (active today). Strictly EXCLUDE past/overdue tasks!
+                val isDueToday = t.dueDate != null && t.dueDate >= todayStart && t.dueDate < tomorrowStart
+                val isNoDue = t.dueDate == null
+                isDueToday || isNoDue
             } else {
                 // Completed tasks completed/due today
                 val isCompletedToday = t.dueDate != null && t.dueDate >= todayStart && t.dueDate < tomorrowStart

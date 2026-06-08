@@ -159,16 +159,29 @@ fun TodoMainDashboard(
         }
     }
 
-    // Filtered lists
-    val filteredTasks = remember(tasks, selectedCategoryFilter, searchQuery, priorityFilter) {
-        val tomorrowStart = Calendar.getInstance().apply {
+    var selectedTab by remember { mutableStateOf(0) } // 0 = Today, 1 = Missed Logs
+
+    val todayStart = remember {
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+
+    val tomorrowStart = remember {
+        Calendar.getInstance().apply {
             add(Calendar.DAY_OF_YEAR, 1)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
         }.timeInMillis
+    }
 
+    // Filtered lists
+    val filteredTasks = remember(tasks, selectedCategoryFilter, searchQuery, priorityFilter, tomorrowStart) {
         tasks.filter { t ->
             val matchesCategory = selectedCategoryFilter == null || t.categoryId == selectedCategoryFilter
             val matchesPriority = priorityFilter == null || t.priority == priorityFilter
@@ -180,6 +193,29 @@ fun TodoMainDashboard(
             val isFuturePending = !t.isCompleted && t.dueDate != null && t.dueDate >= tomorrowStart
 
             matchesCategory && matchesPriority && matchesSearch && !isFuturePending
+        }
+    }
+
+    val filteredTodayTasks = remember(filteredTasks, todayStart, tomorrowStart) {
+        filteredTasks.filter { t ->
+            if (t.isCompleted) {
+                // Completed today: due date is today, OR (due date is null and created/modified today)
+                val isDueToday = t.dueDate != null && t.dueDate >= todayStart && t.dueDate < tomorrowStart
+                val isNoDueCompletedToday = t.dueDate == null && t.createdAt >= todayStart
+                isDueToday || isNoDueCompletedToday
+            } else {
+                // Pending active today: due date is today, OR due date is null
+                val isDueToday = t.dueDate != null && t.dueDate >= todayStart && t.dueDate < tomorrowStart
+                val isNoDue = t.dueDate == null
+                isDueToday || isNoDue
+            }
+        }
+    }
+
+    val filteredMissedTasks = remember(filteredTasks, todayStart) {
+        filteredTasks.filter { t ->
+            // Incomplete, has a due date in the past
+            !t.isCompleted && t.dueDate != null && t.dueDate < todayStart
         }
     }
 
@@ -425,60 +461,218 @@ fun TodoMainDashboard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Task List Header
-            Text(
-                "TASKS (${filteredTasks.size})",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    color = GreyText
-                )
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Tasks List
-            if (filteredTasks.isEmpty()) {
+            // Segmented Tab Selector for Today vs Missed
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(DeepSurface)
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Tab 0: TODAY
                 Box(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (selectedTab == 0) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+                        .clickable { selectedTab = 0 }
+                        .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(
-                            Icons.Default.AssignmentTurnedIn,
-                            contentDescription = "Empty",
-                            modifier = Modifier.size(56.dp),
-                            tint = GreyText.copy(alpha = 0.3f)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "Nothing in this cosmic void.",
-                            color = GreyText,
-                            fontSize = 14.sp
+                            Icons.Default.Today,
+                            contentDescription = "Today",
+                            tint = if (selectedTab == 0) NeonCyan else GreyText,
+                            modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            "Tap + to create a task",
-                            color = NeonCyan,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            text = "TODAY (${filteredTodayTasks.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedTab == 0) Color.White else GreyText,
+                            letterSpacing = 1.sp
                         )
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth().testTag("tasks_list"),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 80.dp)
+
+                // Tab 1: MISSED
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (selectedTab == 1) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+                        .clickable { selectedTab = 1 }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    items(filteredTasks, key = { it.id }) { task ->
-                        val matchedCategory = categories.find { it.id == task.categoryId }
-                        SwipeableTaskCard(
-                            task = task,
-                            category = matchedCategory,
-                            onToggleComplete = { viewModel.completeTaskToggle(task) },
-                            onDelete = { viewModel.deleteTask(task) },
-                            onLinkToCalendar = { viewModel.linkTaskToDeviceCalendar(context, task) }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = "Missed",
+                            tint = if (selectedTab == 1) NeonAmber else GreyText,
+                            modifier = Modifier.size(16.dp)
                         )
+                        Text(
+                            text = "MISSED LOGS (${filteredMissedTasks.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedTab == 1) Color.White else GreyText,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Tasks List
+            if (selectedTab == 0) {
+                if (filteredTodayTasks.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.AssignmentTurnedIn,
+                                contentDescription = "Empty",
+                                modifier = Modifier.size(56.dp),
+                                tint = GreyText.copy(alpha = 0.3f)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "No cosmic objectives scheduled for today.",
+                                color = GreyText,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                "Tap + to create a task",
+                                color = NeonCyan,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxWidth().testTag("tasks_list"),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 80.dp)
+                    ) {
+                        items(filteredTodayTasks, key = { it.id }) { task ->
+                            val matchedCategory = categories.find { it.id == task.categoryId }
+                            SwipeableTaskCard(
+                                task = task,
+                                category = matchedCategory,
+                                onToggleComplete = { viewModel.completeTaskToggle(task) },
+                                onDelete = { viewModel.deleteTask(task) },
+                                onLinkToCalendar = { viewModel.linkTaskToDeviceCalendar(context, task) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                if (filteredMissedTasks.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.CloudDone,
+                                contentDescription = "All clean",
+                                modifier = Modifier.size(56.dp),
+                                tint = NeonTeal.copy(alpha = 0.3f)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "No missed objectives in your orbit!",
+                                color = GreyText,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                "Your progress is perfectly clean.",
+                                color = NeonTeal,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else {
+                    val groupedMissedTasks = remember(filteredMissedTasks) {
+                        filteredMissedTasks.groupBy { t ->
+                            val cal = Calendar.getInstance().apply { timeInMillis = t.dueDate!! }
+                            cal.set(Calendar.HOUR_OF_DAY, 0)
+                            cal.set(Calendar.MINUTE, 0)
+                            cal.set(Calendar.SECOND, 0)
+                            cal.set(Calendar.MILLISECOND, 0)
+                            cal.timeInMillis
+                        }.toSortedMap(reverseOrder())
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f).fillMaxWidth().testTag("missed_tasks_list"),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 80.dp)
+                    ) {
+                        groupedMissedTasks.forEach { (dayMillis, dayTasks) ->
+                            item(key = "header_$dayMillis") {
+                                val sdf = remember { SimpleDateFormat("EEEE, MMM d, yyyy", Locale.getDefault()) }
+                                val dayStr = sdf.format(Date(dayMillis))
+                                
+                                val yesterdayCal = Calendar.getInstance().apply {
+                                    add(Calendar.DAY_OF_YEAR, -1)
+                                }
+                                val isYesterday = Calendar.getInstance().apply { timeInMillis = dayMillis }.let {
+                                    it.get(Calendar.YEAR) == yesterdayCal.get(Calendar.YEAR) &&
+                                            it.get(Calendar.DAY_OF_YEAR) == yesterdayCal.get(Calendar.DAY_OF_YEAR)
+                                }
+                                
+                                val headerLabel = if (isYesterday) "YESTERDAY ($dayStr)" else dayStr
+                                
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 12.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(NeonAmber)
+                                    )
+                                    Text(
+                                        text = headerLabel.uppercase(),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.sp,
+                                            color = NeonAmber
+                                        )
+                                    )
+                                }
+                            }
+                            
+                            items(dayTasks, key = { it.id }) { task ->
+                                val matchedCategory = categories.find { it.id == task.categoryId }
+                                SwipeableTaskCard(
+                                    task = task,
+                                    category = matchedCategory,
+                                    onToggleComplete = { viewModel.completeTaskToggle(task) },
+                                    onDelete = { viewModel.deleteTask(task) },
+                                    onLinkToCalendar = { viewModel.linkTaskToDeviceCalendar(context, task) }
+                                )
+                            }
+                        }
                     }
                 }
             }
